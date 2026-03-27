@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+streamlit
+requests
+python-multipart
+sqlalchemy
+aiosqlite
+redis
+scikit-learn
+imbalanced-learn
+xgboost
+pandas
+numpy
+python-dotenv
+pydantic-settings
+joblib
+loguru

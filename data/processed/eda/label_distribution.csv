@@ -1,0 +1,8 @@
+label,count,percentage
+BENIGN,366963,91.7408
+DDoS,23865,5.9662
+FTP-Patator,5193,1.2982
+DoS slowloris,2661,0.6652
+Web Attack � Brute Force,1082,0.2705
+PortScan,234,0.0585
+Bot,2,0.0005

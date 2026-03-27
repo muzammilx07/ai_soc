@@ -1,0 +1,34 @@
+# Global environment files
+.env
+.env.*
+!.env.example
+
+# Python environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node/Next artifacts
+**/node_modules/
+next-frontend/.next/
+next-frontend/out/
+
+# Local logs and runtime files
+logs/
+*.log
+
+# Large datasets and archives
+data/raw/
+data/processed/*.csv
+data/**/*.zip
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

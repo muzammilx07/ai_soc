@@ -1,0 +1,114 @@
+{
+  "data": {
+    "data_path": "data\\processed\\cicids_2017_merged_clean.csv",
+    "rows": 120000,
+    "columns": 79,
+    "label_column": "label"
+  },
+  "split": {
+    "test_size": 0.2,
+    "random_state": 42,
+    "smote_applied": true,
+    "imbalance_ratio": 410.2727
+  },
+  "models": {
+    "random_forest": {
+      "accuracy": 0.9998,
+      "weighted_f1": 0.9997,
+      "report": {
+        "0": {
+          "precision": 0.9997393661384487,
+          "recall": 0.9999478623566215,
+          "f1-score": 0.999843603378167,
+          "support": 19180.0
+        },
+        "1": {
+          "precision": 0.9997904003353595,
+          "recall": 0.9993714644877436,
+          "f1-score": 0.9995808885163453,
+          "support": 4773.0
+        },
+        "2": {
+          "precision": 1.0,
+          "recall": 0.9574468085106383,
+          "f1-score": 0.9782608695652174,
+          "support": 47.0
+        },
+        "accuracy": 0.99975,
+        "macro avg": {
+          "precision": 0.9998432554912694,
+          "recall": 0.9855887117850012,
+          "f1-score": 0.9925617871532433,
+          "support": 24000.0
+        },
+        "weighted avg": {
+          "precision": 0.9997500259723382,
+          "recall": 0.99975,
+          "f1-score": 0.9997490897729717,
+          "support": 24000.0
+        }
+      }
+    },
+    "xgboost": {
+      "accuracy": 0.9999,
+      "weighted_f1": 0.9999,
+      "report": {
+        "0": {
+          "precision": 0.9998957301496272,
+          "recall": 0.9999478623566215,
+          "f1-score": 0.9999217955736295,
+          "support": 19180.0
+        },
+        "1": {
+          "precision": 0.9997904442581727,
+          "recall": 0.9995809763251624,
+          "f1-score": 0.9996856993190152,
+          "support": 4773.0
+        },
+        "2": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 47.0
+        },
+        "accuracy": 0.999875,
+        "macro avg": {
+          "precision": 0.9998953914692666,
+          "recall": 0.9998429462272612,
+          "f1-score": 0.999869164964215,
+          "support": 24000.0
+        },
+        "weighted avg": {
+          "precision": 0.9998749956130878,
+          "recall": 0.999875,
+          "f1-score": 0.999874995081328,
+          "support": 24000.0
+        }
+      }
+    },
+    "isolation_forest": {
+      "precision": 0.1371,
+      "recall": 0.1027,
+      "f1": 0.1174,
+      "roc_auc": 0.5326
+    }
+  },
+  "label_classes": [
+    "BENIGN",
+    "DDoS",
+    "PortScan"
+  ],
+  "saved_artifacts": [
+    "imputer.joblib",
+    "scaler.joblib",
+    "label_encoder.joblib",
+    "categorical_encoder.joblib",
+    "column_transformer.joblib",
+    "feature_selector.joblib",
+    "selected_features.json",
+    "preprocessor_meta.json",
+    "random_forest.joblib",
+    "xgboost.joblib",
+    "isolation_forest.joblib"
+  ]
+}
