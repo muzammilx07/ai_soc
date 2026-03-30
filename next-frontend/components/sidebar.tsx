@@ -4,9 +4,17 @@ import { ArrowLeft, LogOut, Settings, Shield, UserCog } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Button, Dialog, DialogContent, DialogDescription, DialogTitle, Input } from "@/components/ui";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  Input,
+} from "@/components/ui";
+import { useSocStore } from "@/lib/soc-store";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
@@ -31,8 +39,28 @@ export function Sidebar() {
   const [eventMaxLimitEnabled, setEventMaxLimitEnabled] = useState(true);
   const [eventMaxLimitCount, setEventMaxLimitCount] = useState(300);
   const [eventMaxLimitInput, setEventMaxLimitInput] = useState("300");
+  const [instanceInput, setInstanceInput] = useState("default");
+  const [apiKeyInput, setApiKeyInput] = useState("dev-default-key");
   const [profileMessage, setProfileMessage] = useState("");
   const settingsHydratedRef = useRef(false);
+
+  const instances = useSocStore((state) => state.instances);
+  const selectedInstanceId = useSocStore((state) => state.selectedInstanceId);
+  const selectedApiKey = useSocStore((state) => state.selectedApiKey);
+  const selectedIngestionMode = useSocStore(
+    (state) => state.selectedIngestionMode,
+  );
+  const setInstanceSelection = useSocStore(
+    (state) => state.setInstanceSelection,
+  );
+  const enforceLiveLimitNow = useSocStore((state) => state.enforceLiveLimitNow);
+
+  const querySuffix = useMemo(() => {
+    if (!selectedInstanceId) {
+      return "";
+    }
+    return `?instance_id=${encodeURIComponent(selectedInstanceId)}`;
+  }, [selectedInstanceId]);
 
   const sessionName = data?.user?.name || "SOC Analyst";
   const [displayName, setDisplayName] = useState(sessionName);
@@ -56,9 +84,11 @@ export function Sidebar() {
     }
 
     const savedLimitEnabled =
-      window.localStorage.getItem("soc.live.max.enabled") ?? window.localStorage.getItem("soc.live.rate.enabled");
+      window.localStorage.getItem("soc.live.max.enabled") ??
+      window.localStorage.getItem("soc.live.rate.enabled");
     const savedLimitCount =
-      window.localStorage.getItem("soc.live.max.count") ?? window.localStorage.getItem("soc.live.rate.limitPerMin");
+      window.localStorage.getItem("soc.live.max.count") ??
+      window.localStorage.getItem("soc.live.rate.limitPerMin");
 
     setEventMaxLimitEnabled(savedLimitEnabled !== "false");
     if (savedLimitCount) {
@@ -71,7 +101,26 @@ export function Sidebar() {
     } else {
       setEventMaxLimitInput(String(eventMaxLimitCount));
     }
+
+    const savedInstanceId =
+      window.localStorage.getItem("soc.instance.id") || selectedInstanceId;
+    const savedApiKey =
+      window.localStorage.getItem("soc.instance.apiKey") || selectedApiKey;
+    setInstanceInput(savedInstanceId || "default");
+    setApiKeyInput(savedApiKey || "dev-default-key");
   }, [eventMaxLimitCount, sessionName]);
+
+  useEffect(() => {
+    if (!settingsHydratedRef.current) {
+      return;
+    }
+    if (selectedInstanceId) {
+      setInstanceInput(selectedInstanceId);
+    }
+    if (selectedApiKey) {
+      setApiKeyInput(selectedApiKey);
+    }
+  }, [selectedApiKey, selectedInstanceId]);
 
   const handleLogout = async () => {
     setShowProfile(false);
@@ -91,13 +140,32 @@ export function Sidebar() {
   };
 
   const saveRateLimitSettings = () => {
-    const normalizedLimit = Math.max(20, Math.min(5000, Math.floor(Number(eventMaxLimitInput) || 300)));
-    window.localStorage.setItem("soc.live.max.enabled", String(eventMaxLimitEnabled));
+    const normalizedLimit = Math.max(
+      20,
+      Math.min(5000, Math.floor(Number(eventMaxLimitInput) || 300)),
+    );
+    window.localStorage.setItem(
+      "soc.live.max.enabled",
+      String(eventMaxLimitEnabled),
+    );
     window.localStorage.setItem("soc.live.max.count", String(normalizedLimit));
     setEventMaxLimitCount(normalizedLimit);
     setEventMaxLimitInput(String(normalizedLimit));
+    enforceLiveLimitNow();
     window.dispatchEvent(new Event("soc-live-settings-updated"));
     setProfileMessage("Max events settings saved.");
+  };
+
+  const saveInstanceSettings = async () => {
+    const nextInstance = instanceInput.trim();
+    const nextApiKey = apiKeyInput.trim();
+    if (!nextInstance || !nextApiKey) {
+      setProfileMessage("Instance ID and API key are required.");
+      return;
+    }
+
+    await setInstanceSelection(nextInstance, nextApiKey);
+    setProfileMessage(`Switched to instance '${nextInstance}'.`);
   };
 
   return (
@@ -107,7 +175,9 @@ export function Sidebar() {
           <Shield size={18} />
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Platform</p>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            Platform
+          </p>
           <p className="text-sm font-semibold text-foreground">AI SOC</p>
         </div>
       </div>
@@ -116,7 +186,7 @@ export function Sidebar() {
         {links.map((link) => (
           <Link
             key={link.href}
-            href={link.href}
+            href={`${link.href}${querySuffix}`}
             className={
               pathname.startsWith(link.href)
                 ? "block rounded-md border border-border bg-primary/10 px-3 py-2 text-sm font-medium text-foreground"
@@ -147,17 +217,29 @@ export function Sidebar() {
               </div>
             )}
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
-              <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
+              <p className="truncate text-sm font-medium text-foreground">
+                {displayName}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {displayEmail}
+              </p>
             </div>
           </button>
 
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowProfile(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowProfile(true)}
+            >
               <Settings size={14} className="mr-1" />
               Settings
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setShowProfile(true)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowProfile(true)}
+            >
               <UserCog size={14} className="mr-1" />
               Account
             </Button>
@@ -169,7 +251,9 @@ export function Sidebar() {
         <DialogContent className="max-w-md">
           <div className="space-y-1">
             <DialogTitle>Profile & Preferences</DialogTitle>
-            <DialogDescription>Manage your SOC account actions</DialogDescription>
+            <DialogDescription>
+              Manage your SOC account actions
+            </DialogDescription>
           </div>
 
           <div className="mt-4 flex items-center gap-3 rounded-lg border border-border bg-muted/35 p-3">
@@ -185,8 +269,12 @@ export function Sidebar() {
               </div>
             )}
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
-              <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
+              <p className="truncate text-sm font-semibold text-foreground">
+                {displayName}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {displayEmail}
+              </p>
             </div>
           </div>
 
@@ -224,7 +312,11 @@ export function Sidebar() {
           </div>
 
           <div className="mt-5 flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowProfile(false)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowProfile(false)}
+            >
               Close
             </Button>
           </div>
@@ -252,21 +344,33 @@ export function Sidebar() {
           </div>
 
           <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Profile Name</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Profile Name
+            </p>
             <div className="mt-2 flex items-center gap-2">
               <Input
                 value={profileNameInput}
                 onChange={(event) => setProfileNameInput(event.target.value)}
                 placeholder="Enter profile name"
               />
-              <Button size="sm" onClick={saveProfileName}>Save</Button>
+              <Button size="sm" onClick={saveProfileName}>
+                Save
+              </Button>
             </div>
           </div>
 
-          {profileMessage ? <p className="mt-2 text-xs text-muted-foreground">{profileMessage}</p> : null}
+          {profileMessage ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {profileMessage}
+            </p>
+          ) : null}
 
           <div className="mt-5 flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowEditProfile(false)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowEditProfile(false)}
+            >
               Close
             </Button>
           </div>
@@ -290,41 +394,119 @@ export function Sidebar() {
           </div>
           <div className="space-y-1">
             <DialogTitle>Security Settings</DialogTitle>
-            <DialogDescription>Manage live event max limit</DialogDescription>
+            <DialogDescription>
+              Manage tenant instance and live event max limit
+            </DialogDescription>
           </div>
 
           <div className="mt-3 rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Max Events Limit</p>
-            <p className="mt-1 text-xs text-muted-foreground">Stop live updates when total events reaches this value.</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Tenant Instance
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Select active SOC instance and API key used by websocket and API
+              reads.
+            </p>
+            <div className="mt-2 space-y-2">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Instance ID</p>
+                <select
+                  value={instanceInput}
+                  onChange={(event) => setInstanceInput(event.target.value)}
+                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
+                >
+                  {[
+                    ...new Set([
+                      instanceInput,
+                      ...instances.map((item) => item.instance_id),
+                    ]),
+                  ].map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">API Key</p>
+                <Input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={(event) => setApiKeyInput(event.target.value)}
+                  placeholder="Enter instance API key"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Mode: {selectedIngestionMode || "unknown"}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void saveInstanceSettings()}
+                >
+                  Apply Instance
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Max Events Limit
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Stop live updates when total events reaches this value.
+            </p>
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <label className="inline-flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={eventMaxLimitEnabled}
-                  onChange={(event) => setEventMaxLimitEnabled(event.target.checked)}
+                  onChange={(event) =>
+                    setEventMaxLimitEnabled(event.target.checked)
+                  }
                 />
                 Enable
               </label>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Max events</span>
+                <span className="text-sm text-muted-foreground">
+                  Max events
+                </span>
                 <Input
                   type="number"
                   min={20}
                   max={5000}
                   disabled={!eventMaxLimitEnabled}
                   value={eventMaxLimitInput}
-                  onChange={(event) => setEventMaxLimitInput(event.target.value)}
+                  onChange={(event) =>
+                    setEventMaxLimitInput(event.target.value)
+                  }
                   className="w-24"
                 />
               </div>
-              <Button size="sm" variant="outline" onClick={saveRateLimitSettings}>Apply</Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={saveRateLimitSettings}
+              >
+                Apply
+              </Button>
             </div>
           </div>
 
-          {profileMessage ? <p className="mt-2 text-xs text-muted-foreground">{profileMessage}</p> : null}
+          {profileMessage ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {profileMessage}
+            </p>
+          ) : null}
 
           <div className="mt-5 flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowSecurity(false)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSecurity(false)}
+            >
               Close
             </Button>
           </div>

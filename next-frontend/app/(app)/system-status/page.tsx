@@ -7,9 +7,9 @@ import {
   apiGet,
   apiPost,
   getApiBase,
-  type ResponseLogItem,
   type ServiceHealthResponse,
 } from "@/lib/api";
+import { useSocStore } from "@/lib/soc-store";
 
 interface HealthResponse {
   status: string;
@@ -21,33 +21,34 @@ interface TriggerResponse {
 }
 
 export default function SystemStatusPage() {
+  const selectedInstanceId = useSocStore((state) => state.selectedInstanceId);
+  const responseLogs = useSocStore((state) => state.responses);
+  const refreshScopedData = useSocStore((state) => state.refreshScopedData);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [services, setServices] = useState<ServiceHealthResponse | null>(null);
-  const [responseLogs, setResponseLogs] = useState<ResponseLogItem[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   const load = async () => {
     try {
-      const [healthData, serviceData, logsData] = await Promise.all([
+      const [healthData, serviceData] = await Promise.all([
         apiGet<HealthResponse>("/health"),
         apiGet<ServiceHealthResponse>("/health/services"),
-        apiGet<ResponseLogItem[]>("/response/logs"),
+        refreshScopedData(),
       ]);
       setHealth(healthData);
       setServices(serviceData);
-      setResponseLogs(logsData);
       setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load system status");
+      setError(
+        err instanceof Error ? err.message : "Failed to load system status",
+      );
     }
   };
 
   useEffect(() => {
-    load();
-    const timer = window.setInterval(load, 8000);
-    return () => window.clearInterval(timer);
-  }, []);
+    void load();
+  }, [selectedInstanceId]);
 
   const createDemoRecord = async () => {
     setError("");
@@ -55,6 +56,7 @@ export default function SystemStatusPage() {
 
     try {
       const result = await apiPost<TriggerResponse>("/response/trigger", {
+        instance_id: selectedInstanceId,
         detection_result: {
           prediction: {
             attack_type: "DDoS",
@@ -66,10 +68,16 @@ export default function SystemStatusPage() {
         destination_ip: "172.16.10.5",
       });
 
-      setMessage(`Created alert ${result.alert_id} and incident ${result.incident_id}.`);
+      setMessage(
+        `Created alert ${result.alert_id} and incident ${result.incident_id}.`,
+      );
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create demo alert/incident");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to create demo alert/incident",
+      );
     }
   };
 
@@ -78,29 +86,45 @@ export default function SystemStatusPage() {
       <Card title="System Health">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-lg border border-border bg-muted/50 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Backend</p>
-            <div className="mt-2"><StatusBadge label={health?.status || "unknown"} /></div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Backend
+            </p>
+            <div className="mt-2">
+              <StatusBadge label={health?.status || "unknown"} />
+            </div>
           </div>
           <div className="rounded-lg border border-border bg-muted/50 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Queue Backend</p>
-            <p className="mt-2 text-sm font-semibold text-foreground">{services?.queue_backend || "unknown"}</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Queue Backend
+            </p>
+            <p className="mt-2 text-sm font-semibold text-foreground">
+              {services?.queue_backend || "unknown"}
+            </p>
           </div>
           <div className="rounded-lg border border-border bg-muted/50 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">API Base</p>
-            <p className="mt-2 break-all text-xs font-medium text-foreground">{getApiBase()}</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              API Base
+            </p>
+            <p className="mt-2 break-all text-xs font-medium text-foreground">
+              {getApiBase()}
+            </p>
           </div>
           <div className="rounded-lg border border-border bg-muted/50 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Response Log Entries</p>
-            <p className="mt-2 text-xl font-semibold text-foreground">{responseLogs.length}</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Response Log Entries
+            </p>
+            <p className="mt-2 text-xl font-semibold text-foreground">
+              {responseLogs.length}
+            </p>
           </div>
         </div>
       </Card>
 
       <Card title="Demo Data">
-        <p className="mb-3 text-sm text-muted-foreground">Create one demo alert and incident, same as Streamlit helper.</p>
-        <Button onClick={createDemoRecord}>
-          Create Demo Alert + Incident
-        </Button>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Create one demo alert and incident, same as Streamlit helper.
+        </p>
+        <Button onClick={createDemoRecord}>Create Demo Alert + Incident</Button>
       </Card>
 
       <Card title="Recent Response Logs">
@@ -122,13 +146,22 @@ export default function SystemStatusPage() {
                     <TableCell>{item.id}</TableCell>
                     <TableCell>{item.action}</TableCell>
                     <TableCell>{item.target}</TableCell>
-                    <TableCell><StatusBadge label={item.status} /></TableCell>
-                    <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <StatusBadge label={item.status} />
+                    </TableCell>
+                    <TableCell>
+                      {new Date(item.created_at).toLocaleString()}
+                    </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">No response logs found.</TableCell>
+                  <TableCell
+                    colSpan={5}
+                    className="text-center text-muted-foreground"
+                  >
+                    No response logs found.
+                  </TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -136,7 +169,9 @@ export default function SystemStatusPage() {
         </div>
       </Card>
 
-      {message ? <p className="text-sm text-(--status-ok-fg)">{message}</p> : null}
+      {message ? (
+        <p className="text-sm text-(--status-ok-fg)">{message}</p>
+      ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
   );

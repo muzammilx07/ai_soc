@@ -11,9 +11,12 @@ import {
   apiPost,
   type PlaybookTask,
   type PlaybooksResponse,
+  withInstanceQuery,
 } from "@/lib/api";
+import { useSocStore } from "@/lib/soc-store";
 
 export default function PlaybooksPage() {
+  const selectedInstanceId = useSocStore((state) => state.selectedInstanceId);
   const [tasks, setTasks] = useState<PlaybookTask[]>([]);
   const [newName, setNewName] = useState("");
   const [newCaseId, setNewCaseId] = useState("SOC-001");
@@ -22,13 +25,15 @@ export default function PlaybooksPage() {
 
   const load = useCallback(async () => {
     try {
-      const result = await apiGet<PlaybooksResponse>("/soc/playbooks");
+      const result = await apiGet<PlaybooksResponse>(
+        withInstanceQuery("/soc/playbooks", selectedInstanceId),
+      );
       setTasks(result.items);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load playbooks");
     }
-  }, []);
+  }, [selectedInstanceId]);
 
   useEffect(() => {
     load();
@@ -44,16 +49,19 @@ export default function PlaybooksPage() {
     }
 
     try {
-      await apiPost("/soc/playbooks", {
+      await apiPost(withInstanceQuery("/soc/playbooks", selectedInstanceId), {
         case_id: caseId,
         name,
         status: newStatus,
+        instance_id: selectedInstanceId,
       });
       setNewName("");
       setError("");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create playbook task");
+      setError(
+        err instanceof Error ? err.message : "Failed to create playbook task",
+      );
     }
   };
 
@@ -61,7 +69,9 @@ export default function PlaybooksPage() {
     <div className="space-y-4">
       <Card title="Playbook Kanban Board">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">Drag flow: Pending -> Running -> Success/Failed.</p>
+          <p className="text-sm text-muted-foreground">
+            Drag flow: Pending -&gt; Running -&gt; Success/Failed.
+          </p>
           <Button variant="outline" size="sm" onClick={() => void load()}>
             Refresh Board
           </Button>
@@ -79,7 +89,12 @@ export default function PlaybooksPage() {
             value={newCaseId}
             onChange={(event) => setNewCaseId(event.target.value)}
           />
-          <Select value={newStatus} onChange={(event) => setNewStatus(event.target.value as PlaybookTask["status"])}>
+          <Select
+            value={newStatus}
+            onChange={(event) =>
+              setNewStatus(event.target.value as PlaybookTask["status"])
+            }
+          >
             <option value="pending">pending</option>
             <option value="running">running</option>
             <option value="success">success</option>
@@ -93,26 +108,49 @@ export default function PlaybooksPage() {
         tasks={tasks}
         onTransition={async (taskId, nextState) => {
           try {
-            await apiPost(`/soc/playbooks/${taskId}/transition`, { next_state: nextState });
+            await apiPost(
+              withInstanceQuery(
+                `/soc/playbooks/${taskId}/transition`,
+                selectedInstanceId,
+              ),
+              {
+                next_state: nextState,
+                instance_id: selectedInstanceId,
+              },
+            );
             await load();
           } catch (err) {
-            setError(err instanceof Error ? err.message : "Playbook transition failed");
+            setError(
+              err instanceof Error ? err.message : "Playbook transition failed",
+            );
           }
         }}
         onEdit={async (taskId, payload) => {
           try {
-            await apiPatch(`/soc/playbooks/${taskId}`, payload);
+            await apiPatch(
+              withInstanceQuery(`/soc/playbooks/${taskId}`, selectedInstanceId),
+              {
+                ...payload,
+                instance_id: selectedInstanceId,
+              },
+            );
             await load();
           } catch (err) {
-            setError(err instanceof Error ? err.message : "Playbook update failed");
+            setError(
+              err instanceof Error ? err.message : "Playbook update failed",
+            );
           }
         }}
         onDelete={async (taskId) => {
           try {
-            await apiDelete(`/soc/playbooks/${taskId}`);
+            await apiDelete(
+              withInstanceQuery(`/soc/playbooks/${taskId}`, selectedInstanceId),
+            );
             await load();
           } catch (err) {
-            setError(err instanceof Error ? err.message : "Playbook delete failed");
+            setError(
+              err instanceof Error ? err.message : "Playbook delete failed",
+            );
           }
         }}
       />

@@ -7,10 +7,23 @@ from sqlalchemy.sql import func
 from backend.database import Base
 
 
+class SOCInstance(Base):
+    __tablename__ = "soc_instances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    instance_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="Default Instance")
+    api_key: Mapped[str] = mapped_column(String(255))
+    ingestion_mode: Mapped[str] = mapped_column(String(32), default="realtime", index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Alert(Base):
     __tablename__ = "alerts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    instance_id: Mapped[str] = mapped_column(String(64), index=True, default="default")
     source_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     destination_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     attack_type: Mapped[str] = mapped_column(String(128), index=True)
@@ -25,6 +38,7 @@ class Incident(Base):
     __tablename__ = "incidents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    instance_id: Mapped[str] = mapped_column(String(64), index=True, default="default")
     alert_id: Mapped[int | None] = mapped_column(ForeignKey("alerts.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -42,6 +56,7 @@ class BlockedIP(Base):
     __tablename__ = "blocked_ips"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    instance_id: Mapped[str] = mapped_column(String(64), index=True, default="default")
     ip_address: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
@@ -53,6 +68,7 @@ class ResponseLog(Base):
     __tablename__ = "response_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    instance_id: Mapped[str] = mapped_column(String(64), index=True, default="default")
     alert_id: Mapped[int | None] = mapped_column(ForeignKey("alerts.id"), nullable=True)
     incident_id: Mapped[int | None] = mapped_column(ForeignKey("incidents.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(128), index=True)

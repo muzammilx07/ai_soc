@@ -18,7 +18,7 @@ export default function SignInPage() {
 
   useEffect(() => {
     if (status === "authenticated") {
-      router.push("/dashboard");
+      router.push("/instances");
     }
   }, [router, status]);
 
@@ -26,7 +26,9 @@ export default function SignInPage() {
     <main className="grid min-h-screen place-items-center bg-background px-4 text-foreground">
       <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm">
         <h2 className="text-xl font-semibold tracking-tight">Sign in</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Use demo credentials or Google OAuth if configured.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Use demo credentials or Google OAuth if configured.
+        </p>
 
         <div className="mb-3 mt-5 grid gap-3">
           <Input
@@ -50,7 +52,7 @@ export default function SignInPage() {
               setIsSubmitting(true);
 
               try {
-                const callbackUrl = `${window.location.origin}/dashboard`;
+                const callbackUrl = `${window.location.origin}/instances`;
 
                 const result = await signIn("credentials", {
                   username,
@@ -64,7 +66,7 @@ export default function SignInPage() {
                   return;
                 }
 
-                const target = result.url || "/dashboard";
+                const target = result.url || "/instances";
                 if (target.startsWith("http")) {
                   window.location.assign(target);
                   return;
@@ -85,12 +87,18 @@ export default function SignInPage() {
         </div>
 
         {googleEnabled ? (
-          <Button variant="outline" className="w-full" onClick={() => signIn("google", { callbackUrl: "/dashboard" })}>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => signIn("google", { callbackUrl: "/instances" })}
+          >
             Continue with Google
           </Button>
         ) : null}
 
-        {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+        {error ? (
+          <p className="mt-3 text-sm text-destructive">{error}</p>
+        ) : null}
       </section>
     </main>
   );

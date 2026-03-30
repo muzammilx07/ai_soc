@@ -3,6 +3,31 @@ const API_BASE =
 
 const WS_BASE = API_BASE.replace(/^http/, "ws");
 
+function buildApiUrl(path: string): string {
+  if (!path) {
+    return API_BASE;
+  }
+
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE}${normalizedPath}`;
+}
+
+async function safeFetch(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "unknown fetch error";
+    throw new Error(
+      `Unable to reach backend at ${API_BASE}. Request: ${input}. Reason: ${reason}`,
+    );
+  }
+}
+
 async function parseError(response: Response): Promise<string> {
   try {
     const data = (await response.json()) as { detail?: string };
@@ -12,8 +37,12 @@ async function parseError(response: Response): Promise<string> {
   }
 }
 
+type ApiRequestOptions = {
+  headers?: Record<string, string>;
+};
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await safeFetch(buildApiUrl(path), {
     cache: "no-store",
   });
 
@@ -24,11 +53,16 @@ export async function apiGet<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+export async function apiPost<T>(
+  path: string,
+  body?: unknown,
+  options?: ApiRequestOptions,
+): Promise<T> {
+  const response = await safeFetch(buildApiUrl(path), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(options?.headers || {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -40,11 +74,16 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+export async function apiPatch<T>(
+  path: string,
+  body?: unknown,
+  options?: ApiRequestOptions,
+): Promise<T> {
+  const response = await safeFetch(buildApiUrl(path), {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      ...(options?.headers || {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -56,9 +95,13 @@ export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function apiDelete<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+export async function apiDelete<T>(
+  path: string,
+  options?: ApiRequestOptions,
+): Promise<T> {
+  const response = await safeFetch(buildApiUrl(path), {
     method: "DELETE",
+    headers: options?.headers,
   });
 
   if (!response.ok) {
@@ -68,12 +111,17 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function apiUpload<T>(path: string, file: File): Promise<T> {
+export async function apiUpload<T>(
+  path: string,
+  file: File,
+  options?: ApiRequestOptions,
+): Promise<T> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await safeFetch(buildApiUrl(path), {
     method: "POST",
+    headers: options?.headers,
     body: formData,
   });
 
@@ -90,6 +138,18 @@ export function getApiBase(): string {
 
 export function getWsBase(): string {
   return WS_BASE;
+}
+
+export function withInstanceQuery(
+  path: string,
+  instanceId?: string | null,
+): string {
+  if (!instanceId) {
+    return path;
+  }
+
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}instance_id=${encodeURIComponent(instanceId)}`;
 }
 
 export interface LiveEvent {
@@ -135,6 +195,20 @@ export interface ResponseLogItem {
   target: string;
   status: string;
   created_at: string;
+}
+
+export interface InstanceItem {
+  instance_id: string;
+  name: string;
+  api_key: string;
+  ingestion_mode: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface InstanceCreatePayload {
+  name: string;
+  ingestion_mode: "upload" | "api" | "simulation" | "hybrid";
 }
 
 export interface ServiceHealthResponse {

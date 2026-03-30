@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AlertBase(BaseModel):
+    instance_id: str = "default"
     source_ip: str | None = None
     destination_ip: str | None = None
     attack_type: str
@@ -25,6 +26,7 @@ class AlertRead(AlertBase):
 
 
 class IncidentBase(BaseModel):
+    instance_id: str = "default"
     alert_id: int | None = None
     title: str
     description: str | None = None
@@ -45,6 +47,7 @@ class IncidentRead(IncidentBase):
 
 
 class BlockedIPBase(BaseModel):
+    instance_id: str = "default"
     ip_address: str
     reason: str | None = None
     active: bool = True
@@ -63,6 +66,7 @@ class BlockedIPRead(BlockedIPBase):
 
 
 class ResponseLogBase(BaseModel):
+    instance_id: str = "default"
     alert_id: int | None = None
     incident_id: int | None = None
     action: str
@@ -79,3 +83,24 @@ class ResponseLogRead(ResponseLogBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class InstanceRead(BaseModel):
+    instance_id: str
+    name: str
+    api_key: str
+    ingestion_mode: str
+    active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InstanceCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=128)
+    ingestion_mode: str = Field(default="hybrid", min_length=3, max_length=32)
+
+
+class InstanceDeleteResponse(BaseModel):
+    instance_id: str
+    deleted: bool

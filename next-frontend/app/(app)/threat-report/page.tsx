@@ -3,9 +3,16 @@
 import { useEffect, useState } from "react";
 
 import { Card, Select, StatusBadge } from "@/components/ui";
-import { apiGet, type CasesResponse, type ThreatReport } from "@/lib/api";
+import {
+  apiGet,
+  type CasesResponse,
+  type ThreatReport,
+  withInstanceQuery,
+} from "@/lib/api";
+import { useSocStore } from "@/lib/soc-store";
 
 export default function ThreatReportPage() {
+  const selectedInstanceId = useSocStore((state) => state.selectedInstanceId);
   const [report, setReport] = useState<ThreatReport | null>(null);
   const [caseIds, setCaseIds] = useState<number[]>([]);
   const [caseId, setCaseId] = useState<number | null>(null);
@@ -15,7 +22,9 @@ export default function ThreatReportPage() {
     let active = true;
     const loadCases = async () => {
       try {
-        const cases = await apiGet<CasesResponse>("/soc/cases");
+        const cases = await apiGet<CasesResponse>(
+          withInstanceQuery("/soc/cases", selectedInstanceId),
+        );
         const ids = cases.items
           .map((item) => item.incident_id)
           .filter((id): id is number => typeof id === "number");
@@ -32,12 +41,16 @@ export default function ThreatReportPage() {
 
         if (active) {
           setCaseIds(ids);
-          setCaseId((current) => (current && ids.includes(current) ? current : ids[0]));
+          setCaseId((current) =>
+            current && ids.includes(current) ? current : ids[0],
+          );
           setError("");
         }
       } catch (err) {
         if (active) {
-          setError(err instanceof Error ? err.message : "Failed to load threat report");
+          setError(
+            err instanceof Error ? err.message : "Failed to load threat report",
+          );
         }
       }
     };
@@ -46,7 +59,7 @@ export default function ThreatReportPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [selectedInstanceId]);
 
   useEffect(() => {
     let active = true;
@@ -57,14 +70,18 @@ export default function ThreatReportPage() {
       }
 
       try {
-        const data = await apiGet<ThreatReport>(`/soc/threat-report/${caseId}`);
+        const data = await apiGet<ThreatReport>(
+          withInstanceQuery(`/soc/threat-report/${caseId}`, selectedInstanceId),
+        );
         if (active) {
           setReport(data);
           setError("");
         }
       } catch (err) {
         if (active) {
-          setError(err instanceof Error ? err.message : "Failed to load threat report");
+          setError(
+            err instanceof Error ? err.message : "Failed to load threat report",
+          );
         }
       }
     };
@@ -74,18 +91,24 @@ export default function ThreatReportPage() {
     return () => {
       active = false;
     };
-  }, [caseId]);
+  }, [caseId, selectedInstanceId]);
 
   if (error) {
     return <p className="text-sm text-destructive">{error}</p>;
   }
 
   if (!caseIds.length) {
-    return <p className="text-sm text-muted-foreground">No cases found to generate threat reports.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        No cases found to generate threat reports.
+      </p>
+    );
   }
 
   if (!report) {
-    return <p className="text-sm text-muted-foreground">Loading threat report...</p>;
+    return (
+      <p className="text-sm text-muted-foreground">Loading threat report...</p>
+    );
   }
 
   return (

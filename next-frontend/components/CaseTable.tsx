@@ -17,22 +17,30 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui";
+import { useSocStore } from "@/lib/soc-store";
 
 function tagClass(tag: string): string {
   const key = tag.toLowerCase();
-  if (key === "lateral-movement") return "border-[var(--status-info-fg)] bg-[var(--status-info-bg)] text-[var(--status-info-fg)]";
-  if (key === "exfiltration") return "border-[var(--status-critical-fg)] bg-[var(--status-critical-bg)] text-[var(--status-critical-fg)]";
-  if (key === "malware") return "border-[var(--status-high-fg)] bg-[var(--status-high-bg)] text-[var(--status-high-fg)]";
-  if (key === "iam") return "border-[var(--status-medium-fg)] bg-[var(--status-medium-bg)] text-[var(--status-medium-fg)]";
+  if (key === "lateral-movement")
+    return "border-[var(--status-info-fg)] bg-[var(--status-info-bg)] text-[var(--status-info-fg)]";
+  if (key === "exfiltration")
+    return "border-[var(--status-critical-fg)] bg-[var(--status-critical-bg)] text-[var(--status-critical-fg)]";
+  if (key === "malware")
+    return "border-[var(--status-high-fg)] bg-[var(--status-high-bg)] text-[var(--status-high-fg)]";
+  if (key === "iam")
+    return "border-[var(--status-medium-fg)] bg-[var(--status-medium-bg)] text-[var(--status-medium-fg)]";
   return "border-border bg-muted text-foreground";
 }
 
 export function CaseTable({ items }: { items: CaseItem[] }) {
+  const selectedInstanceId = useSocStore((state) => state.selectedInstanceId);
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState("all");
   const [type, setType] = useState("all");
   const [dateRange, setDateRange] = useState("all");
-  const [sortBy, setSortBy] = useState<keyof CaseItem | "created_at">("created_at");
+  const [sortBy, setSortBy] = useState<keyof CaseItem | "created_at">(
+    "created_at",
+  );
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const types = useMemo(() => {
@@ -44,10 +52,13 @@ export function CaseTable({ items }: { items: CaseItem[] }) {
     const q = search.trim().toLowerCase();
     const now = Date.now();
     const rows = items.filter((item) => {
-      const severityPass = severity === "all" || item.severity.toLowerCase() === severity;
+      const severityPass =
+        severity === "all" || item.severity.toLowerCase() === severity;
       const typePass = type === "all" || item.type === type;
       const createdAt = new Date(item.created_at).getTime();
-      const ageDays = Number.isFinite(createdAt) ? (now - createdAt) / (1000 * 60 * 60 * 24) : Number.POSITIVE_INFINITY;
+      const ageDays = Number.isFinite(createdAt)
+        ? (now - createdAt) / (1000 * 60 * 60 * 24)
+        : Number.POSITIVE_INFINITY;
       const datePass =
         dateRange === "all" ||
         (dateRange === "24h" && ageDays <= 1) ||
@@ -96,10 +107,7 @@ export function CaseTable({ items }: { items: CaseItem[] }) {
           <option value="low">Low</option>
         </Select>
 
-        <Select
-          value={type}
-          onChange={(event) => setType(event.target.value)}
-        >
+        <Select value={type} onChange={(event) => setType(event.target.value)}>
           {types.map((item) => (
             <option key={item} value={item}>
               {item === "all" ? "All Types" : item}
@@ -132,7 +140,9 @@ export function CaseTable({ items }: { items: CaseItem[] }) {
 
         <Button
           variant="outline"
-          onClick={() => setSortOrder((value) => (value === "asc" ? "desc" : "asc"))}
+          onClick={() =>
+            setSortOrder((value) => (value === "asc" ? "desc" : "asc"))
+          }
           type="button"
         >
           Sort: {sortOrder.toUpperCase()}
@@ -157,7 +167,9 @@ export function CaseTable({ items }: { items: CaseItem[] }) {
           <TableBody>
             {filtered.map((item) => (
               <TableRow key={item.id}>
-                <TableCell className="font-semibold text-primary">{item.id}</TableCell>
+                <TableCell className="font-semibold text-primary">
+                  {item.id}
+                </TableCell>
                 <TableCell>{item.title}</TableCell>
                 <TableCell>{item.type}</TableCell>
                 <TableCell>
@@ -169,24 +181,40 @@ export function CaseTable({ items }: { items: CaseItem[] }) {
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
                     {item.tags.map((tag) => (
-                      <Badge key={`${item.id}-${tag}`} className={tagClass(tag)}>
+                      <Badge
+                        key={`${item.id}-${tag}`}
+                        className={tagClass(tag)}
+                      >
                         {tag}
                       </Badge>
                     ))}
                   </div>
                 </TableCell>
                 <TableCell>{item.assignee}</TableCell>
-                <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+                <TableCell>
+                  {new Date(item.created_at).toLocaleString()}
+                </TableCell>
                 <TableCell>
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`/cases/${item.incident_id}`}>Open</Link>
+                    <Link
+                      href={
+                        selectedInstanceId
+                          ? `/cases/${item.incident_id}?instance_id=${encodeURIComponent(selectedInstanceId)}`
+                          : `/cases/${item.incident_id}`
+                      }
+                    >
+                      Open
+                    </Link>
                   </Button>
                 </TableCell>
               </TableRow>
             ))}
             {!filtered.length ? (
               <TableRow>
-                <TableCell colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                <TableCell
+                  colSpan={9}
+                  className="px-4 py-8 text-center text-muted-foreground"
+                >
                   No cases match current filters.
                 </TableCell>
               </TableRow>

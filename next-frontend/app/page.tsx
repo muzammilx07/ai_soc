@@ -92,20 +92,24 @@ function HeroSection() {
       <div className="pointer-events-none absolute -bottom-32 -left-20 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
       <div className="relative grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">AI Security Operations</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            AI Security Operations
+          </p>
           <h1 className="mt-4 text-4xl font-semibold tracking-tight text-foreground md:text-6xl">
-            Stop threats early with an AI-driven SOC built for real-time response.
+            Stop threats early with an AI-driven SOC built for real-time
+            response.
           </h1>
           <p className="mt-5 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
-            Ingest logs continuously, detect anomalies instantly, and automate incident workflows so your team can
-            respond faster with less manual effort.
+            Ingest logs continuously, detect anomalies instantly, and automate
+            incident workflows so your team can respond faster with less manual
+            effort.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">
               <Link href="/signin">Get Started</Link>
             </Button>
             <Button asChild variant="outline" size="lg">
-              <Link href="/dashboard">View Demo</Link>
+              <Link href="/instances">Open Control Plane</Link>
             </Button>
           </div>
         </div>

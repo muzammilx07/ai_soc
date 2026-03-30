@@ -1,76 +1,47 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { Button, Card, StatusBadge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { apiGet, apiPost, getWsBase, type AlertItem, type SocSocketPayload } from "@/lib/api";
+import {
+  Button,
+  Card,
+  StatusBadge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui";
+import { apiPost } from "@/lib/api";
+import { useSocStore } from "@/lib/soc-store";
 
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [liveAlertsCount, setLiveAlertsCount] = useState(0);
-  const [socketStatus, setSocketStatus] = useState<"connecting" | "open" | "closed">("connecting");
+  const alerts = useSocStore((state) => state.alerts);
+  const selectedInstanceId = useSocStore((state) => state.selectedInstanceId);
+  const socketStatus = useSocStore((state) => state.socketStatus);
+  const incidents = useSocStore((state) => state.incidents);
+  const refreshScopedData = useSocStore((state) => state.refreshScopedData);
+  const refreshLiveEvents = useSocStore((state) => state.refreshLiveEvents);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-
-  const loadAlerts = async () => {
-    try {
-      const data = await apiGet<AlertItem[]>("/alerts");
-      setAlerts(data);
-      setError("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch alerts");
-    }
-  };
-
-  useEffect(() => {
-    loadAlerts();
-    const timer = window.setInterval(loadAlerts, 8000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    const socket = new WebSocket(`${getWsBase()}/soc/ws/live`);
-
-    socket.onopen = () => {
-      if (!active) {
-        return;
-      }
-      setSocketStatus("open");
-    };
-
-    socket.onclose = () => {
-      if (!active) {
-        return;
-      }
-      setSocketStatus("closed");
-    };
-
-    socket.onmessage = (event) => {
-      if (!active) {
-        return;
-      }
-
-      try {
-        const payload = JSON.parse(event.data) as SocSocketPayload;
-        setLiveAlertsCount(payload.total_count ?? payload.count ?? 0);
-      } catch {
-        setSocketStatus("closed");
-      }
-    };
-
-    return () => {
-      active = false;
-      socket.close();
-    };
-  }, []);
 
   const createDemoAlertIncident = async () => {
     setMessage("");
     setError("");
     try {
-      const attackPool = ["BENIGN", "PortScan", "Phishing", "BruteForce", "DoS", "DDoS", "Botnet", "Infiltration"];
-      const randomAttack = attackPool[Math.floor(Math.random() * attackPool.length)];
+      const attackPool = [
+        "BENIGN",
+        "PortScan",
+        "Phishing",
+        "BruteForce",
+        "DoS",
+        "DDoS",
+        "Botnet",
+        "Infiltration",
+      ];
+      const randomAttack =
+        attackPool[Math.floor(Math.random() * attackPool.length)];
       const severityByAttack: Record<string, string> = {
         BENIGN: "low",
         PortScan: "medium",
@@ -82,53 +53,90 @@ export default function AlertsPage() {
         Infiltration: "critical",
       };
       const severity = severityByAttack[randomAttack] || "medium";
-      const result = await apiPost<{ alert_id: number; incident_id: number }>("/response/trigger", {
-        detection_result: {
-          prediction: {
-            attack_type: randomAttack,
-            severity,
-            confidence: severity === "critical" ? 0.98 : severity === "high" ? 0.9 : 0.75,
+      const result = await apiPost<{ alert_id: number; incident_id: number }>(
+        "/response/trigger",
+        {
+          instance_id: selectedInstanceId,
+          detection_result: {
+            prediction: {
+              attack_type: randomAttack,
+              severity,
+              confidence:
+                severity === "critical"
+                  ? 0.98
+                  : severity === "high"
+                    ? 0.9
+                    : 0.75,
+            },
           },
+          source_ip: "10.10.10.25",
+          destination_ip: "172.16.10.5",
         },
-        source_ip: "10.10.10.25",
-        destination_ip: "172.16.10.5",
-      });
+      );
       if (result.incident_id) {
-        setMessage(`Created ${severity.toUpperCase()} ${randomAttack} alert ${result.alert_id} and incident ${result.incident_id}.`);
+        setMessage(
+          `Created ${severity.toUpperCase()} ${randomAttack} alert ${result.alert_id} and incident ${result.incident_id}.`,
+        );
       } else {
-        setMessage(`Created ${severity.toUpperCase()} ${randomAttack} alert ${result.alert_id}. No incident created for this severity.`);
+        setMessage(
+          `Created ${severity.toUpperCase()} ${randomAttack} alert ${result.alert_id}. No incident created for this severity.`,
+        );
       }
-      await loadAlerts();
+      await refreshScopedData();
+      await refreshLiveEvents(200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create demo alert");
+      setError(
+        err instanceof Error ? err.message : "Failed to create demo alert",
+      );
     }
   };
 
-  const openAlerts = alerts.filter((item) => item.status.toLowerCase() === "open").length;
+  const openAlerts = alerts.filter(
+    (item) => item.status.toLowerCase() === "open",
+  ).length;
 
   return (
     <div className="space-y-4">
       <Card title="Active Alerts">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-border bg-muted/50 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Alerts</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{alerts.length}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/50 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Open Alerts</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{openAlerts}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/50 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Critical Alerts</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Total Alerts
+            </p>
             <p className="mt-2 text-2xl font-semibold text-foreground">
-              {alerts.filter((item) => item.severity.toLowerCase() === "critical").length}
+              {alerts.length}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/50 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Open Alerts
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">
+              {openAlerts}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/50 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Critical Alerts
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">
+              {
+                alerts.filter(
+                  (item) => item.severity.toLowerCase() === "critical",
+                ).length
+              }
             </p>
           </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <StatusBadge label={socketStatus} />
-          <p className="text-sm text-muted-foreground">Live Stream Total: {liveAlertsCount}</p>
+          <p className="text-sm text-muted-foreground">
+            Synced Alerts: {alerts.length}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Synced Incidents: {incidents.length}
+          </p>
         </div>
 
         <div className="mt-3">
@@ -137,8 +145,12 @@ export default function AlertsPage() {
           </Button>
         </div>
 
-        {message ? <p className="mt-3 text-sm text-(--status-ok-fg)">{message}</p> : null}
-        {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+        {message ? (
+          <p className="mt-3 text-sm text-(--status-ok-fg)">{message}</p>
+        ) : null}
+        {error ? (
+          <p className="mt-3 text-sm text-destructive">{error}</p>
+        ) : null}
       </Card>
 
       <Card title="Alert Table">
@@ -171,14 +183,23 @@ export default function AlertsPage() {
                     <TableCell>{item.source_ip || "-"}</TableCell>
                     <TableCell>{item.destination_ip || "-"}</TableCell>
                     <TableCell>
-                      {typeof item.confidence === "number" ? item.confidence.toFixed(2) : "-"}
+                      {typeof item.confidence === "number"
+                        ? item.confidence.toFixed(2)
+                        : "-"}
                     </TableCell>
-                    <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+                    <TableCell>
+                      {new Date(item.created_at).toLocaleString()}
+                    </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground">No alerts found yet.</TableCell>
+                  <TableCell
+                    colSpan={8}
+                    className="text-center text-muted-foreground"
+                  >
+                    No alerts found yet.
+                  </TableCell>
                 </TableRow>
               )}
             </TableBody>

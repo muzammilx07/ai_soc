@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
     redis_password: str = ""
+    ingest_queue_key: str = "soc:ingest:queue"
+
+    default_instance_id: str = "default"
+    default_instance_api_key: str = "dev-default-key"
+    default_ingestion_mode: str = "realtime"
 
     model_dir: str = "backend/ml/saved_models"
     scaler_path: str = "backend/ml/saved_models/scaler.joblib"

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from functools import partial
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,13 +9,15 @@ from backend.database import init_db
 from backend.routers import (
     alerts_router,
     health_router,
+    ingest_router,
+    instances_router,
     incidents_router,
     logs_router,
     prediction_router,
     response_router,
     soc_router,
 )
-from backend.services import get_streamer
+from backend.services import enqueue_event, get_ingestion_worker, get_streamer
 from backend.utils import setup_logging
 
 
@@ -26,14 +29,28 @@ async def lifespan(app: FastAPI):
     logger.info("Application startup initiated")
     await init_db()
     logger.info("Database initialized")
+
+    ingestion_worker = get_ingestion_worker()
+    await ingestion_worker.start()
+    logger.info("Ingestion worker started")
+
     streamer = get_streamer()
-    await streamer.start_simulator(interval_seconds=2.0)
+    await streamer.start_simulator(
+        ingest_handler=partial(
+            enqueue_event,
+            source="simulator",
+            instance_id=settings.default_instance_id,
+        ),
+        interval_seconds=2.0,
+    )
     logger.info("Event simulator started")
     try:
         yield
     finally:
         await streamer.stop_simulator()
         logger.info("Event simulator stopped")
+        await ingestion_worker.stop()
+        logger.info("Ingestion worker stopped")
         logger.info("Application shutdown completed")
 
 
@@ -54,6 +71,8 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(instances_router)
+app.include_router(ingest_router)
 app.include_router(prediction_router)
 app.include_router(logs_router)
 app.include_router(incidents_router)

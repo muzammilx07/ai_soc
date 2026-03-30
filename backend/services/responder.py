@@ -17,6 +17,7 @@ class IncidentResponder:
     async def _create_alert(
         self,
         db: AsyncSession,
+        instance_id: str,
         source_ip: str | None,
         destination_ip: str | None,
         attack_type: str,
@@ -25,6 +26,7 @@ class IncidentResponder:
         description: str | None,
     ) -> Alert:
         alert = Alert(
+            instance_id=instance_id,
             source_ip=source_ip,
             destination_ip=destination_ip,
             attack_type=attack_type,
@@ -40,12 +42,14 @@ class IncidentResponder:
     async def _create_incident(
         self,
         db: AsyncSession,
+        instance_id: str,
         alert_id: int,
         severity: str,
         attack_type: str,
         description: str | None,
     ) -> Incident:
         incident = Incident(
+            instance_id=instance_id,
             alert_id=alert_id,
             title=f"{severity.upper()} incident: {attack_type}",
             description=description,
@@ -59,13 +63,19 @@ class IncidentResponder:
     async def _block_ip_if_needed(
         self,
         db: AsyncSession,
+        instance_id: str,
         ip_address: str | None,
         reason: str,
     ) -> tuple[BlockedIP | None, str]:
         if not ip_address:
             return None, "skipped"
 
-        result = await db.execute(select(BlockedIP).where(BlockedIP.ip_address == ip_address))
+        result = await db.execute(
+            select(BlockedIP).where(
+                BlockedIP.instance_id == instance_id,
+                BlockedIP.ip_address == ip_address,
+            )
+        )
         existing = result.scalar_one_or_none()
 
         if existing:
@@ -76,7 +86,7 @@ class IncidentResponder:
                 return existing, "reactivated"
             return existing, "already_blocked"
 
-        blocked = BlockedIP(ip_address=ip_address, reason=reason, active=True)
+        blocked = BlockedIP(instance_id=instance_id, ip_address=ip_address, reason=reason, active=True)
         db.add(blocked)
         await db.flush()
         return blocked, "created"
@@ -84,6 +94,7 @@ class IncidentResponder:
     async def _log_action(
         self,
         db: AsyncSession,
+        instance_id: str,
         action: str,
         status: str,
         details: str,
@@ -91,6 +102,7 @@ class IncidentResponder:
         incident_id: int | None = None,
     ) -> ResponseLog:
         entry = ResponseLog(
+            instance_id=instance_id,
             alert_id=alert_id,
             incident_id=incident_id,
             action=action,
@@ -104,12 +116,14 @@ class IncidentResponder:
     async def _send_alert_notification(
         self,
         db: AsyncSession,
+        instance_id: str,
         alert_id: int,
         severity: str,
         attack_type: str,
     ) -> ResponseLog:
         return await self._log_action(
             db=db,
+            instance_id=instance_id,
             action="send_alert",
             status="sent",
             details=f"SOC alert dispatched for {severity} {attack_type}",
@@ -120,6 +134,7 @@ class IncidentResponder:
         self,
         db: AsyncSession,
         detection_result: dict[str, Any],
+        instance_id: str = "default",
         source_ip: str | None = None,
         destination_ip: str | None = None,
     ) -> dict[str, Any]:
@@ -144,6 +159,7 @@ class IncidentResponder:
 
             alert = await self._create_alert(
                 db=db,
+                instance_id=instance_id,
                 source_ip=source_ip,
                 destination_ip=destination_ip,
                 attack_type=attack_type,
@@ -154,6 +170,7 @@ class IncidentResponder:
 
             await self._log_action(
                 db=db,
+                instance_id=instance_id,
                 action="create_alert",
                 status="success",
                 details=f"Alert created with id={alert.id}",
@@ -164,6 +181,7 @@ class IncidentResponder:
             if severity in {"high", "critical"}:
                 created_incident = await self._create_incident(
                     db=db,
+                    instance_id=instance_id,
                     alert_id=alert.id,
                     severity=severity,
                     attack_type=attack_type,
@@ -171,6 +189,7 @@ class IncidentResponder:
                 )
                 await self._log_action(
                     db=db,
+                    instance_id=instance_id,
                     action="create_incident",
                     status="success",
                     details=f"Incident created with id={created_incident.id}",
@@ -183,11 +202,13 @@ class IncidentResponder:
             if severity == "critical":
                 blocked_ip, blocked_ip_status = await self._block_ip_if_needed(
                     db=db,
+                    instance_id=instance_id,
                     ip_address=source_ip,
                     reason=f"Critical threat detected: {attack_type}",
                 )
                 await self._log_action(
                     db=db,
+                    instance_id=instance_id,
                     action="block_ip",
                     status=blocked_ip_status,
                     details=f"IP block action result: {blocked_ip_status}",
@@ -199,6 +220,7 @@ class IncidentResponder:
             if severity in {"medium", "high", "critical"}:
                 await self._send_alert_notification(
                     db=db,
+                    instance_id=instance_id,
                     alert_id=alert.id,
                     severity=severity,
                     attack_type=attack_type,
@@ -215,6 +237,7 @@ class IncidentResponder:
             )
 
             return {
+                "instance_id": instance_id,
                 "alert_id": alert.id,
                 "incident_id": created_incident.id if created_incident else None,
                 "blocked_ip": blocked_ip.ip_address if blocked_ip else None,
@@ -241,6 +264,7 @@ def get_responder() -> IncidentResponder:
 
 async def respond_with_new_session(
     detection_result: dict[str, Any],
+    instance_id: str = "default",
     source_ip: str | None = None,
     destination_ip: str | None = None,
 ) -> dict[str, Any]:
@@ -250,6 +274,7 @@ async def respond_with_new_session(
         return await responder.respond(
             db=session,
             detection_result=detection_result,
+            instance_id=instance_id,
             source_ip=source_ip,
             destination_ip=destination_ip,
         )

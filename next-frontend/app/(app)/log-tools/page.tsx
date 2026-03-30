@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button, Card } from "@/components/ui";
 import { apiPost, apiUpload } from "@/lib/api";
+import { useSocStore } from "@/lib/soc-store";
 
 interface SimulateResponse {
   generated_count: number;
@@ -15,6 +16,10 @@ interface UploadResponse {
 }
 
 export default function LogToolsPage() {
+  const selectedInstanceId = useSocStore((state) => state.selectedInstanceId);
+  const selectedApiKey = useSocStore((state) => state.selectedApiKey);
+  const refreshScopedData = useSocStore((state) => state.refreshScopedData);
+  const refreshLiveEvents = useSocStore((state) => state.refreshLiveEvents);
   const [file, setFile] = useState<File | null>(null);
   const [count, setCount] = useState(20);
   const [message, setMessage] = useState("");
@@ -30,9 +35,24 @@ export default function LogToolsPage() {
     setError("");
     setMessage("");
 
+    if (!selectedInstanceId || !selectedApiKey) {
+      setError("Select an instance before uploading logs");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      const result = await apiUpload<UploadResponse>("/logs/upload", file);
-      setMessage(`Uploaded ${result.filename}. Ingested ${result.ingested_records} records.`);
+      const result = await apiUpload<UploadResponse>("/logs/upload", file, {
+        headers: {
+          "x-instance-id": selectedInstanceId,
+          "x-api-key": selectedApiKey,
+        },
+      });
+      setMessage(
+        `Uploaded ${result.filename}. Ingested ${result.ingested_records} records.`,
+      );
+      await refreshScopedData();
+      await refreshLiveEvents(200);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -49,9 +69,30 @@ export default function LogToolsPage() {
     setError("");
     setMessage("");
 
+    if (!selectedInstanceId || !selectedApiKey) {
+      setError("Select an instance before running simulation");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      const result = await apiPost<SimulateResponse>("/logs/simulate", { count });
+      const result = await apiPost<SimulateResponse>(
+        "/logs/simulate",
+        { count },
+        {
+          headers: {
+            "x-instance-id": selectedInstanceId,
+            "x-api-key": selectedApiKey,
+          },
+        },
+      );
       setMessage(`Generated ${result.generated_count} events.`);
+      await refreshScopedData();
+      await refreshLiveEvents(200);
+      window.setTimeout(() => {
+        void refreshScopedData();
+        void refreshLiveEvents(200);
+      }, 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Simulation failed");
     } finally {
@@ -62,7 +103,9 @@ export default function LogToolsPage() {
   return (
     <div className="space-y-4">
       <Card title="Log Upload">
-        <p className="mb-3 text-sm text-muted-foreground">Upload CSV or JSON logs for ingestion.</p>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Upload CSV or JSON logs for ingestion.
+        </p>
         <input
           type="file"
           accept=".csv,.json"
@@ -77,8 +120,12 @@ export default function LogToolsPage() {
       </Card>
 
       <Card title="Generate Simulated Events">
-        <p className="mb-3 text-sm text-muted-foreground">Quickly generate events to fill the live dashboard.</p>
-        <label htmlFor="event-count" className="text-sm text-foreground">Number of events: {count}</label>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Quickly generate events to fill the live dashboard.
+        </p>
+        <label htmlFor="event-count" className="text-sm text-foreground">
+          Number of events: {count}
+        </label>
         <input
           id="event-count"
           type="range"
@@ -89,7 +136,11 @@ export default function LogToolsPage() {
           className="mt-2 w-full accent-primary"
         />
         <div className="mt-3">
-          <Button variant="outline" disabled={isSubmitting} onClick={onSimulate}>
+          <Button
+            variant="outline"
+            disabled={isSubmitting}
+            onClick={onSimulate}
+          >
             Generate Events
           </Button>
         </div>
@@ -97,12 +148,14 @@ export default function LogToolsPage() {
 
       <Card title="CSV Template">
         <pre className="rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground">
-source_ip,destination_ip,attack_type,severity,confidence
-10.0.0.5,172.16.0.10,PortScan,medium,0.72
+          source_ip,destination_ip,attack_type,severity,confidence
+          10.0.0.5,172.16.0.10,PortScan,medium,0.72
         </pre>
       </Card>
 
-      {message ? <p className="text-sm text-(--status-ok-fg)">{message}</p> : null}
+      {message ? (
+        <p className="text-sm text-(--status-ok-fg)">{message}</p>
+      ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
   );

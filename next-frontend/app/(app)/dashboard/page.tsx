@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { DashboardCharts } from "@/components/DashboardCharts";
-import { Button, Card, StatusBadge } from "@/components/ui";
+import { IngestionControlPanel } from "@/components/IngestionControlPanel";
+import { Button, Card, WebSocketStatusBadge } from "@/components/ui";
 import {
-  apiGet,
-  getWsBase,
-  type SocDashboardResponse,
+  type AlertItem,
+  type LiveEvent,
   type NamedValue,
-  type SocSocketPayload,
+  type SocDashboardResponse,
 } from "@/lib/api";
+import { useSocStore } from "@/lib/soc-store";
 
 function toTitleCase(input: string): string {
   if (!input) {
@@ -19,8 +21,10 @@ function toTitleCase(input: string): string {
   return input.charAt(0).toUpperCase() + input.slice(1).toLowerCase();
 }
 
-function buildDashboardFromSocket(payload: SocSocketPayload): SocDashboardResponse {
-  const events = Array.isArray(payload.events) ? payload.events : [];
+function buildDashboardFromEvents(
+  events: LiveEvent[],
+  totalCases: number,
+): SocDashboardResponse {
   const severityMap = new Map<string, number>();
   const statusMap = new Map<string, number>();
   const alertTypeMap = new Map<string, number>([
@@ -44,7 +48,13 @@ function buildDashboardFromSocket(payload: SocSocketPayload): SocDashboardRespon
   let criticalAlerts = 0;
 
   for (const item of events) {
-    const severityRaw = String(item.severity || "unknown").toLowerCase();
+    const detection =
+      typeof item.detection === "object" && item.detection !== null
+        ? (item.detection as Record<string, unknown>)
+        : null;
+    const severityRaw = String(
+      item.severity || detection?.severity || "unknown",
+    ).toLowerCase();
     const severityLabel = toTitleCase(severityRaw);
     severityMap.set(severityLabel, (severityMap.get(severityLabel) || 0) + 1);
 
@@ -53,14 +63,31 @@ function buildDashboardFromSocket(payload: SocSocketPayload): SocDashboardRespon
     }
     if (severityRaw === "critical") {
       criticalAlerts += 1;
-      closeReasonMap.set("Escalated", (closeReasonMap.get("Escalated") || 0) + 1);
-    } else if (severityRaw === "low" && String(item.attack_type || "").toLowerCase() === "benign") {
+      closeReasonMap.set(
+        "Escalated",
+        (closeReasonMap.get("Escalated") || 0) + 1,
+      );
+    } else if (
+      severityRaw === "low" &&
+      String(item.attack_type || item.event_type || "").toLowerCase() ===
+        "benign"
+    ) {
       closeReasonMap.set("Benign", (closeReasonMap.get("Benign") || 0) + 1);
     } else {
-      closeReasonMap.set("Investigating", (closeReasonMap.get("Investigating") || 0) + 1);
+      closeReasonMap.set(
+        "Investigating",
+        (closeReasonMap.get("Investigating") || 0) + 1,
+      );
     }
 
-    const attackTypeRaw = String(item.attack_type || "unknown").toLowerCase().replace(/\s+/g, "");
+    const attackTypeRaw = String(
+      item.attack_type ||
+        item.event_type ||
+        detection?.attack_type ||
+        "unknown",
+    )
+      .toLowerCase()
+      .replace(/\s+/g, "");
     const mappedType =
       attackTypeRaw === "bruteforce"
         ? "IAM"
@@ -68,7 +95,9 @@ function buildDashboardFromSocket(payload: SocSocketPayload): SocDashboardRespon
           ? "Email"
           : attackTypeRaw === "webattack"
             ? "Proxy"
-            : attackTypeRaw === "ddos" || attackTypeRaw === "dos" || attackTypeRaw === "portscan"
+            : attackTypeRaw === "ddos" ||
+                attackTypeRaw === "dos" ||
+                attackTypeRaw === "portscan"
               ? "NDR"
               : attackTypeRaw === "botnet"
                 ? "EDR"
@@ -80,7 +109,9 @@ function buildDashboardFromSocket(payload: SocSocketPayload): SocDashboardRespon
     const statusLabel = attackTypeRaw === "benign" ? "Closed" : "Open";
     statusMap.set(statusLabel, (statusMap.get(statusLabel) || 0) + 1);
 
-    const timestamp = new Date(String(item.timestamp || payload.timestamp));
+    const timestamp = new Date(
+      String(item.timestamp || new Date().toISOString()),
+    );
     const timeKey = Number.isNaN(timestamp.getTime())
       ? "Unknown"
       : `${timestamp.getUTCFullYear()}-${String(timestamp.getUTCMonth() + 1).padStart(2, "0")}-${String(timestamp.getUTCDate()).padStart(2, "0")} ${String(timestamp.getUTCHours()).padStart(2, "0")}:00`;
@@ -90,20 +121,24 @@ function buildDashboardFromSocket(payload: SocSocketPayload): SocDashboardRespon
       wordMap.set("iam", (wordMap.get("iam") || 0) + 1);
     }
     if (attackTypeRaw.includes("portscan")) {
-      wordMap.set("lateral-movement", (wordMap.get("lateral-movement") || 0) + 1);
+      wordMap.set(
+        "lateral-movement",
+        (wordMap.get("lateral-movement") || 0) + 1,
+      );
     }
     if (attackTypeRaw.includes("ddos") || attackTypeRaw.includes("dos")) {
       wordMap.set("exfiltration", (wordMap.get("exfiltration") || 0) + 1);
     }
-    if (attackTypeRaw.includes("botnet") || attackTypeRaw.includes("infiltration")) {
+    if (
+      attackTypeRaw.includes("botnet") ||
+      attackTypeRaw.includes("infiltration")
+    ) {
       wordMap.set("malware", (wordMap.get("malware") || 0) + 1);
     }
   }
 
   const mapToValues = (source: Map<string, number>): NamedValue[] =>
     Array.from(source.entries()).map(([name, value]) => ({ name, value }));
-
-  const totalCases = payload.total_count ?? payload.count ?? events.length;
 
   return {
     kpis: {
@@ -117,101 +152,141 @@ function buildDashboardFromSocket(payload: SocSocketPayload): SocDashboardRespon
     alerts_over_time: Array.from(overTimeMap.entries())
       .map(([time, count]) => ({ time, count }))
       .sort((a, b) => a.time.localeCompare(b.time)),
-    word_cloud: Array.from(wordMap.entries()).map(([text, value]) => ({ text, value })),
+    word_cloud: Array.from(wordMap.entries()).map(([text, value]) => ({
+      text,
+      value,
+    })),
     close_reason_bar: mapToValues(closeReasonMap),
   };
 }
 
 export default function DashboardPage() {
-  const [dashboard, setDashboard] = useState<SocDashboardResponse | null>(null);
-  const [liveEventsCount, setLiveEventsCount] = useState(0);
-  const [socketStatus, setSocketStatus] = useState<"connecting" | "open" | "closed">("connecting");
-  const [error, setError] = useState("");
+  const searchParams = useSearchParams();
+  const events = useSocStore((state) => state.events);
+  const alerts = useSocStore((state) => state.alerts);
+  const incidents = useSocStore((state) => state.incidents);
+  const socketStatus = useSocStore((state) => state.socketStatus);
+  const error = useSocStore((state) => state.error);
+  const selectedInstanceId = useSocStore((state) => state.selectedInstanceId);
+  const selectedApiKey = useSocStore((state) => state.selectedApiKey);
+  const selectedIngestionMode = useSocStore(
+    (state) => state.selectedIngestionMode,
+  );
+  const setInstanceFromRoute = useSocStore(
+    (state) => state.setInstanceFromRoute,
+  );
+  const reconnectWebSocket = useSocStore((state) => state.reconnectWebSocket);
+  const refreshScopedData = useSocStore((state) => state.refreshScopedData);
 
-  const loadDashboard = async (active = true) => {
-    try {
-      const data = await apiGet<SocDashboardResponse>("/soc/dashboard");
-
-      if (!active) {
-        return;
-      }
-
-      setDashboard(data);
-      setError("");
-    } catch (err) {
-      if (!active) {
-        return;
-      }
-      setError(err instanceof Error ? err.message : "Failed to load dashboard data");
-    }
+  const logDashboardSnapshot = (label: string) => {
+    console.log("[SOC][ui] dashboard snapshot", {
+      label,
+      instanceId: selectedInstanceId,
+      socketStatus,
+      alerts: alerts.length,
+      incidents: incidents.length,
+      bufferedEvents: events.length,
+    });
   };
 
   useEffect(() => {
-    let active = true;
+    const routeInstanceId = searchParams.get("instance_id");
+    if (!routeInstanceId) {
+      return;
+    }
+    void setInstanceFromRoute(routeInstanceId);
+  }, [searchParams, setInstanceFromRoute]);
 
-    loadDashboard(active);
+  const analyticsEvents = useMemo<LiveEvent[]>(() => {
+    if (events.length) {
+      return events;
+    }
 
-    const socket = new WebSocket(`${getWsBase()}/soc/ws/live`);
-    socket.onopen = () => {
-      if (active) {
-        setSocketStatus("open");
-      }
-    };
-    socket.onclose = () => {
-      if (active) {
-        setSocketStatus("closed");
-      }
-    };
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as SocSocketPayload;
-        if (active) {
-          setLiveEventsCount(data.total_count ?? data.count ?? 0);
-          setDashboard((previous) => {
-            const liveDashboard = buildDashboardFromSocket(data);
-            if (!previous) {
-              return liveDashboard;
-            }
+    return alerts.map((item: AlertItem) => ({
+      timestamp: item.created_at,
+      source_ip: item.source_ip || undefined,
+      destination_ip: item.destination_ip || undefined,
+      attack_type: item.attack_type || "Unknown",
+      severity: item.severity,
+      confidence: typeof item.confidence === "number" ? item.confidence : undefined,
+    }));
+  }, [alerts, events]);
 
-            return {
-              ...previous,
-              ...liveDashboard,
-            };
-          });
-        }
-      } catch {
-        if (active) {
-          setSocketStatus("closed");
-        }
-      }
-    };
+  const dashboard = useMemo<SocDashboardResponse>(
+    () => buildDashboardFromEvents(analyticsEvents, alerts.length),
+    [alerts.length, analyticsEvents],
+  );
 
-    return () => {
-      active = false;
-      socket.close();
-    };
-  }, []);
+  if (!selectedInstanceId || !selectedApiKey) {
+    return (
+      <Card title="Instance Required">
+        <p className="text-sm text-muted-foreground">
+          Select an instance in the control plane to start real-time SOC
+          monitoring.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-4">
       <Card title="Real-Time SOC Feed">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Real-Time SOC Feed</p>
-            <p className="text-2xl font-bold tracking-tight text-foreground">Live Alerts: {liveEventsCount}</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              Real-Time SOC Feed
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Instance: {selectedInstanceId}
+            </p>
+            <p className="text-2xl font-bold tracking-tight text-foreground">
+              Total Alerts: {alerts.length}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Total Incidents: {incidents.length}
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <StatusBadge label={socketStatus} />
-            <Button variant="outline" size="sm" onClick={() => void loadDashboard(true)}>
-              Refresh
+            <WebSocketStatusBadge status={socketStatus} />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={socketStatus === "open" || socketStatus === "connecting"}
+              onClick={async () => {
+                logDashboardSnapshot("before-reconnect-click");
+                console.log("[SOC][ui] reconnect click start", { page: "dashboard" });
+
+                reconnectWebSocket();
+
+                try {
+                  await refreshScopedData();
+                  console.log("[SOC][ui] refreshScopedData completed", { page: "dashboard" });
+                } catch (error) {
+                  console.log("[SOC][ui] refreshScopedData failed", {
+                    page: "dashboard",
+                    error: error instanceof Error ? error.message : "unknown error",
+                  });
+                }
+
+                window.setTimeout(() => {
+                  logDashboardSnapshot("after-reconnect-click");
+                }, 1200);
+              }}
+            >
+              Reconnect
             </Button>
           </div>
         </div>
       </Card>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {dashboard ? <DashboardCharts data={dashboard} /> : <p className="text-sm text-muted-foreground">Loading dashboard...</p>}
+      <IngestionControlPanel
+        instanceId={selectedInstanceId}
+        apiKey={selectedApiKey}
+        mode={selectedIngestionMode}
+      />
+      <DashboardCharts data={dashboard} />
     </div>
   );
 }

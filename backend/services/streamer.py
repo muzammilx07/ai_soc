@@ -6,7 +6,7 @@ import json
 import random
 from collections import deque
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 aioredis = None
@@ -120,19 +120,22 @@ class EventStreamer:
 
         return {"backend": "memory", "event": event}
 
-    async def generate_event(self) -> dict[str, Any]:
-        event = self._simulate_event()
-        result = await self.publish_event(event)
-        return result["event"]
+    def generate_simulated_event(self) -> dict[str, Any]:
+        return self._simulate_event()
 
-    async def start_simulator(self, interval_seconds: float = 2.0) -> None:
+    async def start_simulator(
+        self,
+        ingest_handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
+        interval_seconds: float = 2.0,
+    ) -> None:
         if self._generator_task and not self._generator_task.done():
             return
 
         async def _run() -> None:
             while True:
                 try:
-                    await self.generate_event()
+                    raw_event = self.generate_simulated_event()
+                    await ingest_handler(raw_event)
                 except Exception:
                     pass
                 await asyncio.sleep(interval_seconds)

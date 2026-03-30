@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any
@@ -11,9 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
-from backend.database import get_db
+from backend.database import SessionLocal, get_db
 from backend.models.db_models import Alert, Incident
-from backend.services import get_playbook_engine, get_streamer
+from backend.services import get_instance_by_credentials, get_playbook_engine, get_realtime_stream_hub
 from backend.services.ml_metrics import MLMetricsEngine
 
 
@@ -110,9 +109,18 @@ def _word_cloud_data(alerts: list[Alert]) -> list[dict[str, Any]]:
 
 
 @router.get("/dashboard")
-async def dashboard_data(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    alerts_result = await db.execute(select(Alert).order_by(Alert.created_at.desc()).limit(1000))
-    incidents_result = await db.execute(select(Incident).order_by(Incident.created_at.desc()).limit(1000))
+async def dashboard_data(
+    db: AsyncSession = Depends(get_db),
+    instance_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    alert_query = select(Alert)
+    incident_query = select(Incident)
+    if instance_id:
+        alert_query = alert_query.where(Alert.instance_id == instance_id)
+        incident_query = incident_query.where(Incident.instance_id == instance_id)
+
+    alerts_result = await db.execute(alert_query.order_by(Alert.created_at.desc()).limit(1000))
+    incidents_result = await db.execute(incident_query.order_by(Incident.created_at.desc()).limit(1000))
 
     alerts = list(alerts_result.scalars().all())
     incidents = list(incidents_result.scalars().all())
@@ -138,14 +146,21 @@ async def dashboard_data(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
 @router.get("/cases")
 async def list_cases(
     db: AsyncSession = Depends(get_db),
+    instance_id: str | None = Query(default=None),
     severity: str | None = None,
     case_type: str | None = Query(default=None, alias="type"),
     q: str | None = None,
     sort_by: str = "created_at",
     order: str = "desc",
 ) -> dict[str, Any]:
-    incidents_result = await db.execute(select(Incident).order_by(Incident.created_at.desc()).limit(2000))
-    alerts_result = await db.execute(select(Alert).order_by(Alert.created_at.desc()).limit(2000))
+    incidents_query = select(Incident)
+    alerts_query = select(Alert)
+    if instance_id:
+        incidents_query = incidents_query.where(Incident.instance_id == instance_id)
+        alerts_query = alerts_query.where(Alert.instance_id == instance_id)
+
+    incidents_result = await db.execute(incidents_query.order_by(Incident.created_at.desc()).limit(2000))
+    alerts_result = await db.execute(alerts_query.order_by(Alert.created_at.desc()).limit(2000))
 
     incidents = list(incidents_result.scalars().all())
     alerts = {item.id: item for item in alerts_result.scalars().all()}
@@ -197,15 +212,25 @@ async def list_cases(
 
 
 @router.get("/cases/{case_id}")
-async def case_detail(case_id: int, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    incident_result = await db.execute(select(Incident).where(Incident.id == case_id))
+async def case_detail(
+    case_id: int,
+    db: AsyncSession = Depends(get_db),
+    instance_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    incident_query = select(Incident).where(Incident.id == case_id)
+    if instance_id:
+        incident_query = incident_query.where(Incident.instance_id == instance_id)
+    incident_result = await db.execute(incident_query)
     incident = incident_result.scalar_one_or_none()
     if incident is None:
         raise HTTPException(status_code=404, detail="Case not found")
 
     alert = None
     if incident.alert_id:
-        alert_result = await db.execute(select(Alert).where(Alert.id == incident.alert_id))
+        alert_query = select(Alert).where(Alert.id == incident.alert_id)
+        if instance_id:
+            alert_query = alert_query.where(Alert.instance_id == instance_id)
+        alert_result = await db.execute(alert_query)
         alert = alert_result.scalar_one_or_none()
 
     severity = str(incident.severity).lower()
@@ -266,8 +291,15 @@ async def case_detail(case_id: int, db: AsyncSession = Depends(get_db)) -> dict[
 
 
 @router.get("/ml/metrics")
-async def ml_metrics(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    alerts_result = await db.execute(select(Alert).order_by(Alert.created_at.desc()).limit(1000))
+async def ml_metrics(
+    db: AsyncSession = Depends(get_db),
+    instance_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    alerts_query = select(Alert)
+    if instance_id:
+        alerts_query = alerts_query.where(Alert.instance_id == instance_id)
+
+    alerts_result = await db.execute(alerts_query.order_by(Alert.created_at.desc()).limit(1000))
     alerts = list(alerts_result.scalars().all())
     distribution = Counter(str(item.attack_type) for item in alerts)
     return metrics_engine.summary(prediction_distribution=dict(distribution))
@@ -338,21 +370,42 @@ async def delete_playbook(task_id: str) -> dict[str, Any]:
 
 @router.websocket("/ws/live")
 async def live_soc_socket(websocket: WebSocket) -> None:
+    instance_id = websocket.query_params.get("instance_id")
+    api_key = websocket.query_params.get("api_key")
+    if not instance_id or not api_key:
+        await websocket.close(code=4401, reason="Missing instance credentials")
+        return
+
+    async with SessionLocal() as session:
+        instance = await get_instance_by_credentials(
+            db=session,
+            instance_id=str(instance_id),
+            api_key=str(api_key),
+        )
+    if instance is None:
+        await websocket.close(code=4403, reason="Invalid instance credentials")
+        return
+
     await websocket.accept()
-    streamer = get_streamer()
+    hub = get_realtime_stream_hub()
+    subscriber = await hub.subscribe()
     try:
-        while True:
-            events = await streamer.get_recent_events(limit=40)
-            total_count = await streamer.get_total_events()
-            backend = (await streamer.health())["queue_backend"]
-            payload = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "count": len(events),
-                "total_count": total_count,
-                "queue_backend": backend,
-                "events": events,
+        await websocket.send_json(
+            {
+                "type": "connection",
+                "status": "connected",
+                "channels": ["event", "alert", "response"],
+                "path": "/soc/ws/live",
+                "instance_id": str(instance.instance_id),
             }
-            await websocket.send_json(payload)
-            await asyncio.sleep(2)
+        )
+        while True:
+            message = await subscriber.get()
+            message_instance_id = str(message.get("instance_id") or "default")
+            if message_instance_id != str(instance.instance_id):
+                continue
+            await websocket.send_json(message)
     except WebSocketDisconnect:
         return
+    finally:
+        await hub.unsubscribe(subscriber)

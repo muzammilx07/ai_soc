@@ -120,6 +120,35 @@ export function StatusBadge({ label }: { label: string }) {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
+export function WebSocketStatusBadge({
+  status,
+}: {
+  status: "connecting" | "open" | "closed";
+}) {
+  const isOpen = status === "open";
+
+  return (
+    <div
+      className={cn(
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold tracking-wide",
+        isOpen
+          ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-700"
+          : "border-red-500/50 bg-red-500/10 text-red-700",
+      )}
+      title={`WebSocket ${isOpen ? "OPEN" : "CLOSED"}`}
+      aria-live="polite"
+    >
+      <span
+        className={cn(
+          "h-2.5 w-2.5 rounded-full animate-pulse",
+          isOpen ? "bg-emerald-500" : "bg-red-500",
+        )}
+      />
+      <span>{isOpen ? "OPEN" : "CLOSED"}</span>
+    </div>
+  );
+}
+
 export function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="rounded-xl border border-border bg-card text-card-foreground shadow-sm">

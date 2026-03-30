@@ -3,7 +3,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from backend.database import get_db
@@ -15,6 +15,7 @@ router = APIRouter(prefix="/response", tags=["response"])
 
 
 class ResponseTriggerRequest(BaseModel):
+    instance_id: str = "default"
     detection_result: dict[str, Any]
     source_ip: str | None = None
     destination_ip: str | None = None
@@ -29,6 +30,7 @@ async def trigger_response(
     result = await responder.respond(
         db=db,
         detection_result=payload.detection_result,
+        instance_id=payload.instance_id,
         source_ip=payload.source_ip,
         destination_ip=payload.destination_ip,
     )
@@ -36,6 +38,12 @@ async def trigger_response(
 
 
 @router.get("/logs", response_model=list[ResponseLogRead])
-async def list_response_logs(db: AsyncSession = Depends(get_db)) -> list[ResponseLog]:
-    result = await db.execute(select(ResponseLog).order_by(ResponseLog.created_at.desc()))
+async def list_response_logs(
+    db: AsyncSession = Depends(get_db),
+    instance_id: str | None = Query(default=None),
+) -> list[ResponseLog]:
+    query = select(ResponseLog)
+    if instance_id:
+        query = query.where(ResponseLog.instance_id == instance_id)
+    result = await db.execute(query.order_by(ResponseLog.created_at.desc()))
     return list(result.scalars().all())
