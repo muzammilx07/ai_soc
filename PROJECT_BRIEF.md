@@ -77,7 +77,7 @@ Request lifecycle:
 
 ## Run (Minimal)
 Backend (from repo root):
-- `C:\Users\Muzammil\Desktop\ai_soc\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000`
+- `C:\Users\Desktop\ai_soc\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000`
 
 Frontend:
 - `cd next-frontend`
